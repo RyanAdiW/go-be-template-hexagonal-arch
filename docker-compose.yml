@@ -1,0 +1,26 @@
+services:
+  api:
+    build: .
+    env_file: .env
+    ports: ["8080:8080"]
+    depends_on:
+      postgres: {condition: service_healthy}
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  migrate:
+    image: migrate/migrate:v4.18.1
+    profiles: ["migrate"]
+    volumes: ["./migrations:/migrations:ro"]
+    command: ["-path=/migrations", "-database=postgres://app:app@postgres:5432/app?sslmode=disable", "up"]
+    depends_on:
+      postgres: {condition: service_healthy}
