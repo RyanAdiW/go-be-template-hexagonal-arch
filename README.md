@@ -45,6 +45,12 @@ internal/
 
 ### GORM boundary
 
+Architecture conventions, implementation status, and examples are documented in
+the [Architecture guide](docs/architecture.md).
+The guide covers module ports and ownership, composition, transactions, HTTP
+contracts, observability, lifecycle, persistence mapping, OpenAPI, and testing.
+Proposed capabilities are explicitly distinguished from the current implementation.
+
 `domain.User` has no GORM tags and never imports `gorm.io/*`. Persistence models live exclusively in `internal/user/adapter/outbound/postgres` and are mapped to and from domain entities.
 
 The project also **does not use `AutoMigrate()`**. Database schema is managed only through versioned SQL files in [`migrations/`](migrations), executed by `golang-migrate` before application rollout.
