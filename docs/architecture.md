@@ -16,13 +16,13 @@ remain outside the template. Retain this template's `domain` package name.
 | --- | --- | --- |
 | Feature-owned modular monolith | Present | Document ownership and cross-module dependency rules |
 | Pure domain and application | Present for user use cases | Preserve; keep ORM, HTTP and provider details in adapters |
-| Inbound/outbound application ports | Outbound repository port only, without directional package | Add inbound contracts and directional port packages |
-| Composition builders and transport registrars | Wiring in `user/module.go` | Move wiring into per-module app builders |
+| Inbound/outbound application ports | Explicit inbound service and outbound DB ports | Preserve framework-free contracts |
+| Composition builders and transport registrars | Wiring in `app/user_module.go`; HTTP registrar | Extend per module |
 | Cohesive repositories | One user repository | Keep cohesive; split by aggregate/query only as needed |
-| Compile-time port assertions | Missing for user repository | Add for production port implementations |
-| Context-scoped transaction port | Missing | Add framework-free port and GORM adapter |
+| Compile-time port assertions | Present for user service and repository | Add for new production port implementations |
+| Context-scoped transaction port | Framework-free port and GORM adapter present | Use for atomic multi-write workflows |
 | Explicit persistence mapping | Present | Extend conventions for nullability, dates and decimals |
-| Separate HTTP DTO files | DTOs inside handler | Extract DTOs and mapping alongside handler |
+| Separate HTTP DTO files | DTOs and mapping in `user_dto.go` | Preserve separation |
 | Shared response/error contract | Manual envelopes; platform knows user errors | Add typed helpers and module-owned error translation |
 | Final-status request observability | Error rendered after metrics/logging | Render errors before observing status |
 | Resource lifecycle | Basic shutdown | Add startup cleanup, connection timeout and joined errors |
@@ -52,7 +52,7 @@ Only composition code imports concrete implementations to assemble modules.
 Use `snake_case` for multiword directory names; package names may remain ordinary
 lowercase Go identifiers. Avoid circular module dependencies.
 
-Proposed layout:
+Current module layout (HTTP response helpers remain planned):
 
 ```text
 internal/
@@ -69,15 +69,15 @@ internal/
     domain/
     application/
       port/inbound/
-      port/outbound/
+      port/outbound/db/
     adapter/
       inbound/http/
         module.go
-        user_handler.go
+        handler.go
         user_dto.go
-      outbound/postgres/
-        user_repository.go
-        user_model.go
+      outbound/db/users/
+        repository.go
+        model.go
 ```
 
 ### Application ports and compile-time checks
@@ -88,31 +88,20 @@ If command/result types would create an import cycle, define them in the inbound
 contract package or a module-owned application types package.
 
 ```go
-// user/application/port/inbound/create_user.go
-package inbound
+// user/application/user.go
+var _ inbound.UserServiceInterface = (*UserService)(nil)
 
-type CreateUserCommand struct {
-    Email string
-    Name  string
-}
-
-type UserCreator interface {
-    Execute(context.Context, CreateUserCommand) (domain.User, error)
-}
+// user/adapter/outbound/db/users/repository.go
+var _ repo.UserRepository = (*usersDB)(nil)
 ```
 
-```go
-// user/application/create_user.go
-var _ inbound.UserCreator = (*CreateUser)(nil)
-
-// user/adapter/outbound/postgres/user_repository.go
-var _ outbound.UserRepository = (*Repository)(nil)
-```
+`UserService` implements `CreateUser` and `GetUserByID`; their implementation
+files remain separate. Commands live in the inbound package to avoid import cycles.
 
 Declare an assertion beside every production implementation of an application
 port, including application services and provider adapters. Test doubles can
 use assertions when helpful but do not require production conventions.
-Handlers receive inbound interfaces instead of `*application.CreateUser`.
+Handlers receive inbound interfaces instead of concrete application structs.
 
 ### Composition and registration
 
@@ -121,19 +110,9 @@ then returns the module's HTTP registrar. Bootstrap creates shared resources,
 invokes builders and registers each module once. The registrar groups routes
 and handlers without containing business logic.
 
-```go
-// internal/app/user_module.go: illustrative wiring after port refactoring.
-func buildUserModule(db *gorm.DB, validate *validator.Validate) *userhttp.Module {
-    repo := userpostgres.NewRepository(db)
-    create := userapplication.NewCreateUser(repo, time.Now)
-    get := userapplication.NewGetUser(repo)
-    return userhttp.NewModule(userhttp.Dependencies{
-        Creator: create,
-        Reader: get,
-        Validator: validate,
-    })
-}
-```
+See `internal/app/user_module.go`: the builder creates the users DB adapter,
+constructs `UserService`, and supplies it through `userhttp.Dependencies`.
+
 
 Use named dependency structs when several ports make positional constructors
 ambiguous. Do not add a service locator or global dependency container.
@@ -233,7 +212,7 @@ Keep SQL migrations authoritative; never introduce `AutoMigrate`.
 
 ## HTTP DTOs, validation and response contracts
 
-Move request/response structs and mapping functions into `user_dto.go`. Keep
+Request/response structs and mapping functions live in `user_dto.go`. Keep
 route registration in the module registrar, and request parsing, validation,
 application calls and response delivery in the handler. Application services
 must not return HTTP status codes or response envelopes.

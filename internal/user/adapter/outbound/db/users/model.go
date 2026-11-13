@@ -1,9 +1,10 @@
-package postgres
+package users
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/ryanadi/go-be-template-hexagonal-arch/internal/user/domain"
-	"time"
 )
 
 // userModel belongs exclusively to the PostgreSQL adapter. Domain entities remain ORM-free.
@@ -17,8 +18,21 @@ type userModel struct {
 
 func (userModel) TableName() string { return "users" }
 func toModel(user domain.User) userModel {
-	return userModel{ID: user.ID, Email: user.Email, Name: user.Name, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt}
+	return userModel{
+		ID:        user.ID,
+		Email:     user.Email,
+		Name:      user.Name,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+	}
 }
+
 func toDomain(model userModel) domain.User {
-	return domain.User{ID: model.ID, Email: model.Email, Name: model.Name, CreatedAt: model.CreatedAt, UpdatedAt: model.UpdatedAt}
+	return domain.User{
+		ID:        model.ID,
+		Email:     model.Email,
+		Name:      model.Name,
+		CreatedAt: model.CreatedAt,
+		UpdatedAt: model.UpdatedAt,
+	}
 }

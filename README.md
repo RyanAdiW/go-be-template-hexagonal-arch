@@ -37,11 +37,23 @@ internal/
 ├── platform/                    # Config, database, HTTP server, security, observability
 └── user/                        # Complete reference module
     ├── domain/                  # Pure entities and domain errors
-    ├── application/             # Use cases and ports
+    ├── application/             # UserService and inbound/outbound ports
     └── adapter/
         ├── inbound/http/        # Echo handlers, DTOs, and routes
-        └── outbound/postgres/   # GORM models, mappers, and repository
+        └── outbound/db/users/   # GORM models, mappers, and repository
 ```
+
+Application services implement explicit inbound interfaces. HTTP adapters receive those
+interfaces; outbound interfaces describe persistence and other dependencies.
+`internal/app/user_module.go` assembles concrete implementations, while the HTTP
+module registers routes. Cross-module calls should use an outbound adapter that
+calls the owning module's inbound port.
+
+`internal/shared/application/port/outbound.Transactor` and its GORM implementation
+support atomic workflows across repositories sharing one database pool. Every
+repository operation resolves the active transaction from context. Nested calls
+reuse it; errors must propagate to the outer callback for rollback. The single-write
+user example does not require an explicit transaction.
 
 ### GORM boundary
 
@@ -51,7 +63,7 @@ The guide covers module ports and ownership, composition, transactions, HTTP
 contracts, observability, lifecycle, persistence mapping, OpenAPI, and testing.
 Proposed capabilities are explicitly distinguished from the current implementation.
 
-`domain.User` has no GORM tags and never imports `gorm.io/*`. Persistence models live exclusively in `internal/user/adapter/outbound/postgres` and are mapped to and from domain entities.
+`domain.User` has no GORM tags and never imports `gorm.io/*`. Persistence models live exclusively in `internal/user/adapter/outbound/db/users` and are mapped to and from domain entities.
 
 The project also **does not use `AutoMigrate()`**. Database schema is managed only through versioned SQL files in [`migrations/`](migrations), executed by `golang-migrate` before application rollout.
 
