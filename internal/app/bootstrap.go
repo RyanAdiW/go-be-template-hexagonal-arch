@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/ryanadi/go-be-template-hexagonal-arch/internal/platform/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/ryanadi/go-be-template-hexagonal-arch/internal/platform/observability"
 	"github.com/ryanadi/go-be-template-hexagonal-arch/internal/platform/security"
 	"gopkg.in/go-playground/validator.v9"
+	"gorm.io/gorm"
 )
 
 type Application struct {
@@ -20,13 +22,25 @@ type Application struct {
 	closeDB func() error
 }
 
-func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Application, error) {
+type Dependencies struct {
+	Now func() time.Time
+}
+
+func New(ctx context.Context, cfg config.Config, log *slog.Logger, deps Dependencies) (*Application, error) {
+	if deps.Now == nil {
+		deps.Now = time.Now
+	}
+
 	db, closeDB, err := database.Open(ctx, cfg.Database)
 	if err != nil {
 		return nil, err
 	}
 
-	token := security.NewTokenManager(cfg.JWT)
+	db = db.Session(&gorm.Session{NowFunc: func() time.Time { return deps.Now().UTC() }})
+
+	tokens := security.NewTokenManager(cfg.JWT)
+	userModule := buildUserModule(db, validator.New())
+
 	metrics := observability.NewHTTPMetrics(prometheus.DefaultRegisterer)
 
 	router := httpserver.New(cfg, func(ctx context.Context) error {
@@ -35,12 +49,11 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Application
 			return err
 		}
 		return sqlDB.PingContext(ctx)
-	}, token, metrics, log)
+	}, tokens, metrics, log)
 
-	module := buildUserModule(db, validator.New())
-	api := router.Group("/api/v1")
+	apiV1 := router.Group("/api/v1")
 
-	module.RegisterRoutes(api, httpserver.Auth(token))
+	userModule.RegisterRoutes(apiV1, httpserver.Auth(tokens))
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
@@ -51,8 +64,8 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Application
 	}
 
 	return &Application{
-		server,
-		closeDB,
+		server:  server,
+		closeDB: closeDB,
 	}, nil
 }
 
@@ -64,5 +77,6 @@ func (a *Application) Shutdown(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return closeErr
 }

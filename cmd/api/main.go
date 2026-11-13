@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ryanadi/go-be-template-hexagonal-arch/internal/app"
 	"github.com/ryanadi/go-be-template-hexagonal-arch/internal/platform/config"
@@ -34,7 +35,9 @@ func main() {
 	}
 	defer func() { _ = shutdownTracing(context.Background()) }()
 
-	application, err := app.New(ctx, cfg, log)
+	application, err := app.New(ctx, cfg, log, app.Dependencies{
+		Now: time.Now,
+	})
 	if err != nil {
 		log.Error("startup failed", "error", err)
 		os.Exit(1)
